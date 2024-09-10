@@ -1,0 +1,141 @@
+name: "Docker Image Scanning"
+description: "the Image Scanning"
+inputs:
+  TRIVY_FORMAT:
+    description: "Trivy format"
+    required: false
+    default: "cyclonedx"
+  TRIVY_OUTPUT_FILE:
+    description: "Trivy Out file name"
+    required: false
+    default: "sbom.cyclonedx.json"
+  GITHUB_TOKEN:
+    description: "Github secrets"
+    required: true
+    default:
+
+runs:
+  using: "composite"
+
+  steps:
+
+
+    # Step 1: Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    # Step 2: Install dependencies
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas
+
+
+    # Step 3: Check the Initialize Docker Tags step
+    - name: SBOM for Image
+      id: trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.scanning_tags }}'
+        format: 'cyclonedx'
+        output: 'sbom.cyclonedx.json'
+
+    # Step 4: Generate XML SBOM
+    - name: Generate XML SBOM
+      uses: CycloneDX/gh-dotnet-generate-sbom@v1
+      with:
+        path: ./AVLPassportApi.sln
+        # out: ./sbom.xml
+        github-bearer-token: ${{ inputs.GITHUB_TOKEN }}
+
+    # Step 5: Write Python script for parsing BOM XML and SBOM JSON
+    - name: Write Python script
+      shell: bash
+      run: |
+          cat <<EOF > parse_bom.py
+          import xml.etree.ElementTree as ET
+          import pandas as pd
+          import json
+
+          # Function to parse XML file
+          def parse_xml_bom(xml_file):
+              tree = ET.parse(xml_file)
+              root = tree.getroot()
+              namespaces = {"ns": "http://cyclonedx.org/schema/bom/1.5"}
+              data = []
+
+              # Extract data from the <components> section
+              for component in root.findall(".//ns:component", namespaces):
+                  name = component.find("ns:name", namespaces).text if component.find("ns:name", namespaces) is not None else "N/A"
+                  version = component.find("ns:version", namespaces).text if component.find("ns:version", namespaces) is not None else "N/A"
+                  licenses = component.findall("ns:licenses/ns:license/ns:id", namespaces)
+                  license_ids = ", ".join([license.text for license in licenses]) if licenses else "N/A"
+                  
+                  if license_ids != "N/A":
+                      data.append({
+                          "Name": name[:40],  # Truncate to 20 characters
+                          "Version": version[:10],  # Truncate to 10 characters
+                          "Licenses": license_ids[:15]  # Truncate to 15 characters
+                      })
+              
+              return data
+
+          # Function to parse JSON SBOM file
+          def parse_json_sbom(json_file):
+              with open(json_file, 'r') as f:
+                  sbom_data = json.load(f)
+              
+              data = []
+              for component in sbom_data.get('components', []):
+                  name = component.get('name', 'N/A')[:40]  # Truncate to 20 characters
+                  version = component.get('version', 'N/A')[:10]  # Truncate to 10 characters
+                  licenses = component.get('licenses', [])
+                  license_name = licenses[0]['license'].get('name', 'N/A') if licenses else 'N/A'
+                  
+                  if license_name != 'N/A':
+                      data.append({
+                          "Name": name,
+                          "Version": version,
+                          "Licenses": license_name[:15]  # Truncate to 15 characters
+                      })
+              
+              return data
+
+          # Parse both the XML and JSON SBOM files
+          xml_data = parse_xml_bom('/home/runner/work/avl-passport-api/avl-passport-api/bom.xml')
+          json_data = parse_json_sbom('sbom.cyclonedx.json')
+
+          # Combine both XML and JSON data
+          combined_data = xml_data + json_data
+
+          # Create a pandas DataFrame with 'Name', 'Version', and 'Licenses' columns
+          df = pd.DataFrame(combined_data)
+
+          # Format the DataFrame as a table with fixed-width columns
+          table = df.to_string(index=False, col_space=15)
+
+          # Write the formatted table to a text file
+          with open("bom_data_combined.txt", "w") as f:
+              f.write(table)
+
+          print(table)
+          EOF
+
+    # Step 6: Run Python script to process BOM XML and JSON SBOM files
+    - name: Run Python script
+      shell: bash
+      run: |
+        python parse_bom.py
+
+
+    # Step 7: Upload generated BOM and SBOM data for analysis
+    - name: Upload SBOM and BOM data
+      uses: actions/upload-artifact@v3
+      with:
+        name: bom-and-sbom-data
+        path: |
+          sbom.cyclonedx.json
+          bom_data_combined.txt
