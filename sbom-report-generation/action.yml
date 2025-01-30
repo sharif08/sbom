@@ -20,13 +20,13 @@ runs:
   steps:
 
 
-    # Step 1: Set up Python
+    # Step 2: Set up Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
-    # Step 2: Install dependencies
+    # Step 3: Install dependencies
     - name: Install Python dependencies
       shell: bash
       run: |
@@ -34,7 +34,7 @@ runs:
         pip install pandas
 
 
-    # Step 3: Check the Initialize Docker Tags step
+    # Check the Initialize Docker Tags step
     - name: SBOM for Image
       id: trivy
       uses: aquasecurity/trivy-action@master
@@ -43,7 +43,6 @@ runs:
         format: 'cyclonedx'
         output: 'sbom.cyclonedx.json'
 
-    # Step 4: Generate XML SBOM
     - name: Generate XML SBOM
       uses: CycloneDX/gh-dotnet-generate-sbom@v1
       with:
@@ -51,7 +50,7 @@ runs:
         # out: ./sbom.xml
         github-bearer-token: ${{ inputs.GITHUB_TOKEN }}
 
-    # Step 5: Write Python script for parsing BOM XML and SBOM JSON
+    # Step 6: Write Python script for parsing BOM XML and SBOM JSON
     - name: Write Python script
       shell: bash
       run: |
@@ -124,14 +123,13 @@ runs:
           print(table)
           EOF
 
-    # Step 6: Run Python script to process BOM XML and JSON SBOM files
+    # Step 7: Run Python script to process BOM XML and JSON SBOM files
     - name: Run Python script
       shell: bash
       run: |
         python parse_bom.py
 
-
-    # Step 7: Upload generated BOM and SBOM data for analysis
+    # Step 8: Upload generated BOM and SBOM data for analysis
     - name: Upload SBOM and BOM data
       uses: actions/upload-artifact@v3
       with:
@@ -139,3 +137,147 @@ runs:
         path: |
           sbom.cyclonedx.json
           bom_data_combined.txt
+
+
+
+
+
+
+# # Working good
+#     # - name: Set up Python
+#     #   uses: actions/setup-python@v4
+#     #   with:
+#     #     python-version: '3.9'  # Specify the Python version you want to use
+
+#     # - name: Install dependencies
+#     #   shell: bash
+#     #   run: |
+#     #     python -m pip install --upgrade pip
+#     #     pip install pandas tabulate
+
+#     # - name: Write Python script
+#     #   shell: bash
+#     #   run: |
+#     #       cat <<EOF > parse_bom.py
+#     #       import xml.etree.ElementTree as ET
+#     #       import pandas as pd
+
+#     #       # Read and parse the XML file
+#     #       tree = ET.parse("bom.xml")
+#     #       root = tree.getroot()
+
+#     #       # Define namespaces to handle XML namespaces
+#     #       namespaces = {"ns": "http://cyclonedx.org/schema/bom/1.5"}
+
+#     #       # Define a list to store the extracted data
+#     #       data = []
+
+#     #       # Extract data from the <components> section
+#     #       for component in root.findall(".//ns:component", namespaces):
+#     #           name = component.find("ns:name", namespaces).text if component.find("ns:name", namespaces) is not None else "N/A"
+#     #           version = component.find("ns:version", namespaces).text if component.find("ns:version", namespaces) is not None else "N/A"
+#     #           licenses = component.findall("ns:licenses/ns:license/ns:id", namespaces)
+#     #           license_ids = ", ".join([license.text for license in licenses]) if licenses else "N/A"
+              
+#     #           # Append only rows where license is not "N/A"
+#     #           if license_ids != "N/A":
+#     #               data.append({
+#     #                   "Name": name[:20],  # Truncate to 20 characters
+#     #                   "Version": version[:10],  # Truncate to 10 characters
+#     #                   "Licenses": license_ids[:15]  # Truncate to 15 characters
+#     #               })
+
+#     #       # Create a pandas DataFrame with only 'Name', 'Version', and 'Licenses' columns
+#     #       df = pd.DataFrame(data)
+
+#     #       # Format the DataFrame as a table with fixed-width columns
+#     #       table = df.to_string(index=False, col_space=15)
+
+#     #       # Write the formatted table to a text file
+#     #       with open("bom_data.txt", "w") as f:
+#     #           f.write(table)
+
+#     #       print(table)
+#     #       EOF
+
+#     # - name: Run script
+#     #   shell: bash
+#     #   run: |
+#     #     python parse_bom.py
+#     #     cat bom_data.txt
+
+#     # - name: Upload results
+#     #   uses: actions/upload-artifact@v3
+#     #   with:
+#     #     name: bom-data
+#     #     path: bom_data.txt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#     # # Install Syft for generating SBOM
+#     # - name: Install Syft
+#     #   shell: bash
+#     #   run: |
+#     #     curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+#     # # Generate SBOM in table format for Docker image
+#     # - name: Generate SBOM for Docker image (Table Output)
+#     #   shell: bash
+#     #   run: |
+#     #     syft ${{ env.scanning_tags }} -o table > sbom.txt
+
+
+#     # - name: Generate Summary
+#     #   shell: bash
+#     #   id: generate-summary
+#     #   run: |
+#     #     echo "### SBOM Report" >> $GITHUB_STEP_SUMMARY
+#     #     echo "" >> $GITHUB_STEP_SUMMARY
+#     #     cat sbom.txt >> $GITHUB_STEP_SUMMARY
+
+
+
+#     # Check the Initialize Docker Tags step
+#     - name: SBOM for Image
+#       id: trivy
+#       uses: aquasecurity/trivy-action@master
+#       with:
+#         image-ref: '${{ env.scanning_tags }}'
+#         format: 'cyclonedx'
+#         output: 'sbom.cyclonedx.json'
+
+
+
+#     - name: Convert SBOM to Markdown Table
+#       shell: bash
+#       id: sbom-to-table
+#       run: |
+#         echo "| Component Name | Version | License |" >> sbom-table.md
+#         echo "| -------------- | ------- | ------- |" >> sbom-table.md
+#         cat sbom.cyclonedx.json | jq -r '.components[] | "| \(.name) | \(.version) | \(.licenses[0].license.name // "N/A") |"' >> sbom-table.md
+
+#     - name: Display SBOM JSON
+#       shell: bash
+#       run: |
+#         echo "Displaying SBOM JSON:"
+#         cat sbom-table.md
+
+#     - name: Generate Summary
+#       shell: bash
+#       id: generate-summary
+#       run: |
+#         echo "### SBOM Report" >> $GITHUB_STEP_SUMMARY
+#         echo "" >> $GITHUB_STEP_SUMMARY
+#         cat sbom-table.md >> $GITHUB_STEP_SUMMARY
